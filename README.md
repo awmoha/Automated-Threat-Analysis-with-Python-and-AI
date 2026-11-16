@@ -2,10 +2,10 @@ Ett automatiserat system för hotanalys (Threat Intelligence) byggt med Python, 
 
 **✨ Funktioner**
 
-**Automatiserad datainsamling: **
+Automatiserad datainsamling:
 Hämtar och parsa hotdata och säkerhetsnyheter från RSS-flöden (t.ex. The Hacker News och     BleepingComputer) samt sårbarhetsdatabaser.
 
-**AI-driven hotanalys (Google Gemini): **
+**AI-driven hotanalys (Google Gemini):**
 Analyserar rubriker och artikelinnehåll för att automatiskt generera:
   -Riskpoäng (1–10) och hotnivå
   -Kategorisering (Ransomware, Sårbarhet & CVE, Skadlig kod, Nätfiske & Social Engineering,     Övriga hot)
@@ -17,7 +17,7 @@ Analyserar rubriker och artikelinnehåll för att automatiskt generera:
   -Filtrering på källa, datumintervall, hotkategori och fritextsökning i artiklar
   -Direktknapp för att synkronisera nya hot och köra batch-analys med AI
 
-**IT-Forensik & Spårbarhet: **
+**IT-Forensik & Spårbarhet:**
 Inbyggd loggvy i gränssnittet för att granska systemloggar från insamlings- och analysflödet.
 
 **Lokal lagring:** 
