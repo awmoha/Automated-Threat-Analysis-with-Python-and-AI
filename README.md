@@ -2,7 +2,7 @@ Ett automatiserat system för hotanalys (Threat Intelligence) byggt med Python, 
 
 **✨ Funktioner**
 
-Automatiserad datainsamling:
+**Automatiserad datainsamling:**
 Hämtar och parsa hotdata och säkerhetsnyheter från RSS-flöden (t.ex. The Hacker News och     BleepingComputer) samt sårbarhetsdatabaser.
 
 **AI-driven hotanalys (Google Gemini):**
