@@ -1,6 +1,7 @@
 from datetime import datetime, date
 import os
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import streamlit as st
 import pandas as pd
 from dotenv import load_dotenv
@@ -62,7 +63,6 @@ view = st.sidebar.radio(
     "Välj vy",
     [
         "Dashboard & Hotanalys",
-        "Laboration & Experiment (1-4)",
         "IT-Forensik & Loggar",
     ],
 )
@@ -86,7 +86,7 @@ if view == "Dashboard & Hotanalys":
     # Initiera session state för filter
     if "filtered_source" not in st.session_state:
         st.session_state.filtered_source = "Alla källor"
-        st.session_state.num_to_analyze = 50
+        st.session_state.num_to_analyze = 300
         st.session_state.from_date = min_date
         st.session_state.to_date = max_date
         st.session_state.selected_category = "Choose options"
@@ -125,7 +125,7 @@ if view == "Dashboard & Hotanalys":
 if view == "Dashboard & Hotanalys":
     st.title("🛡️ Automatiserad Hotanalys (Threat Intelligence) med Python & AI")
     st.markdown(
-        "Visar alla insamlade artiklar, datumfilter och AI-kategorisering från flera källor."
+        "Visar alla insamlade artiklar, datumfilter och snabb parallell AI-analys via Gemini."
     )
 
     if not API_KEY:
@@ -185,54 +185,85 @@ if view == "Dashboard & Hotanalys":
             else 0
         )
 
+        # Initiera state för klickbart filter om det inte finns
+        if "selected_filter" not in st.session_state:
+            st.session_state.selected_filter = "Alla"
+
         st.markdown(f"### 📊 Sammanställning ({total_posts} hot hittade)")
 
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Totalt antal poster", total_posts)
+            if st.button("Visa alla hot", key="btn_visa_alla"):
+                st.session_state.selected_filter = "Alla"
+                st.rerun()
         with col2:
             st.metric("Genomsnittlig riskpoäng", f"{avg_risk:.1f}/10")
         with col3:
             st.metric("Kritiska hot (Risk ≥ 8)", critical_posts)
+            if st.button("Visa endast kritiska", key="btn_visa_kritiska"):
+                st.session_state.selected_filter = "Kritiska"
+                st.rerun()
+
+        # Filtrera visnings-DataFrame baserat på klickade knappar
+        display_df = filtered_df.copy()
+        if st.session_state.selected_filter == "Kritiska":
+            if "risk_score" in display_df.columns:
+                display_df = display_df[display_df["risk_score"] >= 8]
 
         st.markdown("---")
 
+        # --- PARALLELL AI-ANALYS (OPTIMERAD FÖR HASTIGHET) ---
         if st.button("Kör AI-analys på filtrerade poster", type="primary"):
             if not API_KEY:
-                st.error(
-                    "Kan inte köra analys utan en giltig GEMINI_API_KEY i .env!"
-                )
+                st.error("Kan inte köra analys utan en giltig GEMINI_API_KEY i .env!")
             else:
                 analyzer = ThreatAnalyzer(api_key=API_KEY)
                 progress_bar = st.progress(0)
                 status_text = st.empty()
 
-                posts_to_process = filtered_df.head(st.session_state.num_to_analyze)
+                posts_to_process = list(filtered_df.head(st.session_state.num_to_analyze).itertuples())
                 total = len(posts_to_process)
+                completed = 0
 
-                for idx, row in enumerate(posts_to_process.itertuples()):
-                    status_text.text(
-                        f"Analyserar ({idx+1}/{total}): {row.title[:50]}..."
-                    )
-                    analysis = analyzer.analyze(row.title, row.content)
+                def analyze_single(row):
+                    try:
+                        analysis = analyzer.analyze(row.title, row.content)
+                        return row.id, analysis
+                    except Exception as e:
+                        return row.id, {
+                            "hotniva": "Fel",
+                            "kategori": "Övriga hot",
+                            "risk_score": 5,
+                            "sammanfattning": f"Fel vid analys: {e}",
+                            "rekommendation": "Kontrollera anslutning."
+                        }
 
-                    storage.update_analysis(
-                        row.id,
-                        hotniva=analysis.get("hotniva", "Hög"),
-                        kategori=analysis.get("kategori", "Övriga hot"),
-                        risk_score=analysis.get("risk_score", 5),
-                        sammanfattning=analysis.get("sammanfattning", ""),
-                        rekommendation=analysis.get("rekommendation", "")
-                    )
-                    progress_bar.progress((idx + 1) / total)
+                with ThreadPoolExecutor(max_workers=5) as executor:
+                    future_to_row = {executor.submit(analyze_single, row): row for row in posts_to_process}
+                    
+                    for future in as_completed(future_to_row):
+                        row_id, analysis = future.result()
+                        completed += 1
+                        
+                        storage.update_analysis(
+                            row_id,
+                            hotniva=analysis.get("hotniva", "Hög"),
+                            kategori=analysis.get("kategori", "Övriga hot"),
+                            risk_score=analysis.get("risk_score", 5),
+                            sammanfattning=analysis.get("sammanfattning", ""),
+                            rekommendation=analysis.get("rekommendation", "")
+                        )
+                        status_text.text(f"Analyserar hot ({completed}/{total}) parallellt...")
+                        progress_bar.progress(completed / total)
 
                 status_text.text("AI-analys klar!")
-                st.success("Alla poster har analyserats klart av Gemini!")
+                st.success(f"Alla {total} poster har analyserats supersnabbt!")
                 st.rerun()
 
-        # Visar ALLA filtrerade poster utan .head()-begränsning
-        st.markdown(f"### Aktuella Hot ({total_posts} st)")
-        for row in filtered_df.itertuples():
+        # Visar listan baserat på det aktiva filtret (Alla eller Kritiska)
+        st.markdown(f"### Aktuella Hot ({len(display_df)} st) - Visar: {st.session_state.selected_filter}")
+        for row in display_df.itertuples():
             risk = getattr(row, "risk_score", 5)
             icon = "🔴" if risk >= 8 else ("🟡" if risk >= 5 else "🟢")
 
@@ -252,7 +283,6 @@ elif view == "IT-Forensik & Loggar":
     st.title("🔍 IT-Forensik & Loggar")
     st.markdown("Här visas systemloggar och spårbarhet från insamlings- och AI-pipelinen.")
 
-    # Sök efter loggar i både 'logs/'-mappen och i rotmappen
     logs_dir = Path(__file__).parent / "logs"
     log_files = []
     

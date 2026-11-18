@@ -5,6 +5,7 @@ from typing import Any, Dict
 
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
 
 from logger_setup import setup_logger
 
@@ -27,25 +28,29 @@ class ThreatAnalyzer:
 
     def analyze(self, title: str, text: str) -> Dict[str, Any]:
         prompt = f"""
-Du är en erfaren cybersäkerhetsanalytiker. Analysera följande information:
-
+Du är cybersäkerhetsanalytiker. Analysera kort:
 Titel: {title}
-Innehåll: {text[:1800]}
+Innehåll: {text[:1000]}
 
-Svara EXAKT i följande format (inga markdown-block runt om, enbart raderna):
-
+Svara EXAKT i detta format (inga extra tecken):
 HOTNIVÅ: [Kritisk / Hög / Medel / Låg]
 KATEGORI: [Ransomware / Sårbarhet & CVE / Skadlig kod / Nätfiske & Social Engineering / Övriga hot]
-RISKPOÄNG: [heltal 1-10]
-SAMMANFATTNING: [max 2 meningar på svenska]
-REKOMMENDATION: [konkret åtgärd för IT-avdelningen, 1-2 meningar]
+RISKPOÄNG: [1-10]
+SAMMANFATTNING: [max 2 meningar]
+REKOMMENDATION: [1 kort mening]
 """
 
         try:
-            # Uppdaterad modell enligt Googles rekommendation
+            # OPTIMERING FÖR HÖGSTA HASTIGHET:
+            # - Använder gemini-3.8-flash
+            # - Sätter max_output_tokens till 150 (svarar direkt och slutar i tid)
             response = self.client.models.generate_content(
                 model="gemini-3.8-flash",
                 contents=prompt,
+                config=types.GenerateContentConfig(
+                    max_output_tokens=150,
+                    temperature=0.1,  # Lägre temperatur ger snabbare och säkrare struktur
+                )
             )
             result_text = response.text.strip()
             return self._parse_response(result_text, text)
@@ -57,7 +62,7 @@ REKOMMENDATION: [konkret åtgärd för IT-avdelningen, 1-2 meningar]
                 "risk_score": 5,
                 "riskpoang": 5,
                 "sammanfattning": f"Kunde inte analysera: {e}",
-                "rekommendation": "Kontrollera API-nyckel och nätverksanslutning.",
+                "rekommendation": "Kontrollera API-nyckel.",
             }
 
     def _parse_response(
